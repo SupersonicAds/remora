@@ -42,7 +42,7 @@ package object models {
 
     def decode(metricName: String): Option[RegistryKafkaMetric] = metricName match {
       case metricRegex(prefix, topic, partition, group, suffix) => Some(RegistryKafkaMetric(prefix, topic, Some(partition), group, suffix))
-      case metricWithoutPartitionRegex(prefix, topic, group, suffix) => Some(RegistryKafkaMetric(prefix, topic, None, group, suffix+"no_pt"))
+      case metricWithoutPartitionRegex(prefix, topic, group, suffix) => Some(RegistryKafkaMetric(prefix, topic, None, group, suffix+".no_pt"))
       case _ => None
     }
 
