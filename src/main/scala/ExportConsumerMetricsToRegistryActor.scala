@@ -26,6 +26,8 @@ class BaseExportConsumerMetricsToRegistryActor(kafkaClientActorRef: ActorRef)
   implicit val timeout = Timeout(60 seconds)
   implicit val apiExecutionContext = actorSystem.dispatchers.lookup("exporter-dispatcher")
 
+  private val consumerRegexp = "console-consumer-*".r
+
   private def askFor[RES](command: Command)(implicit tag: ClassTag[RES]) =
     (kafkaClientActorRef ? command).mapTo[RES]
 
@@ -34,27 +36,29 @@ class BaseExportConsumerMetricsToRegistryActor(kafkaClientActorRef: ActorRef)
       log.info("Exporting lag info to metrics registry!")
       val consumerList = askFor[List[String]](ListConsumers)
       consumerList.map(_.foreach(consumerGroup => {
-        val groupInfo = askFor[GroupInfo](DescribeKafkaConsumerGroup(consumerGroup))
-        groupInfo.map { gi =>
-          gi.partitionAssignmentStates.map(pa => {
-            pa.map { p =>
-              val offsetKey = encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "offset"))
-              registerOrUpdateGauge(offsetKey, p.offset)
+        if (consumerRegexp.findAllIn(consumerGroup).length == 0) {
+          val groupInfo = askFor[GroupInfo](DescribeKafkaConsumerGroup(consumerGroup))
+          groupInfo.map { gi =>
+            gi.partitionAssignmentStates.map(pa => {
+              pa.map { p =>
+                val offsetKey = encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "offset"))
+                registerOrUpdateGauge(offsetKey, p.offset)
 
-              val lagKey = encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "lag"))
-              registerOrUpdateGauge(lagKey, p.lag)
+                val lagKey = encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "lag"))
+                registerOrUpdateGauge(lagKey, p.lag)
 
-              val logEndKey =  encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "logend"))
-              registerOrUpdateGauge(logEndKey, p.logEndOffset)
-            }
-            gi.lagPerTopic.map { lagPerTopic =>
-              lagPerTopic.foreach { case (topic, totalLag) =>
-                val lagKey = encode(RegistryKafkaMetric("gauge", topic, None, consumerGroup, "lag" ))
-                registerOrUpdateGauge(lagKey, Some(totalLag))
+                val logEndKey =  encode(RegistryKafkaMetric("gauge", p.topic.get, p.partition.map(_.toString), p.group, "logend"))
+                registerOrUpdateGauge(logEndKey, p.logEndOffset)
+              }
+              gi.lagPerTopic.map { lagPerTopic =>
+                lagPerTopic.foreach { case (topic, totalLag) =>
+                  val lagKey = encode(RegistryKafkaMetric("gauge", topic, None, consumerGroup, "lag" ))
+                  registerOrUpdateGauge(lagKey, Some(totalLag))
+                }
               }
             }
+            )
           }
-          )
         }
       }))
   }
